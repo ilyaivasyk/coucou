@@ -893,8 +893,9 @@ final class IslandWindowController: NSWindowController {
         }
 
         NotificationCenter.default.addObserver(forName: .islandMoveBy, object: nil, queue: .main) { [weak self] note in
+            guard let delta = note.object as? CGFloat, delta.isFinite else { return }
             MainActor.assumeIsolated {
-                guard let self, let panel = self.window, let delta = note.object as? CGFloat, delta.isFinite else { return }
+                guard let self, let panel = self.window else { return }
                 let screen = Self.islandScreen().frame
                 panel.setFrame(IslandHorizontalPosition.frame(screen: screen, panelSize: panel.frame.size,
                     offset: panel.frame.midX - screen.midX + delta, islandWidth: IslandConst.expandedWidth), display: true)
