@@ -404,7 +404,9 @@ struct QuestionView: View {
     var body: some View {
         ZStack {
             CardBackground(wash: .cyan)
-            if let q = question, !q.questions.isEmpty {
+            if let q = question, q.codexRequest != nil {
+                CodexQuestionNotice(question: q)
+            } else if let q = question, !q.questions.isEmpty {
                 let qi = min(questionIndex, q.questions.count - 1)
                 let item = q.questions[qi]
                 let isLast = qi == q.questions.count - 1
@@ -609,6 +611,40 @@ struct QuestionView: View {
 }
 
 // MARK: - Error
+
+private struct CodexQuestionNotice: View {
+    let question: AskQuestion
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Codex is asking")
+                .font(.system(size: 12, weight: .semibold))
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(question.questions.indices, id: \.self) { i in
+                        let item = question.questions[i]
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(verbatim: item.question).font(.system(size: 13, weight: .semibold))
+                            ForEach(item.options.indices, id: \.self) { j in
+                                let option = item.options[j]
+                                Text(verbatim: option.label + (option.description.isEmpty ? "" : " — " + option.description))
+                                    .font(.system(size: 12)).foregroundColor(Color(hex: "#8E939C"))
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+            PrimaryButton("Open Codex") {
+                if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.openai.codex") {
+                    NSWorkspace.shared.openApplication(at: url, configuration: .init(), completionHandler: nil)
+                }
+            }
+        }
+        .padding(.leading, 116).padding(.trailing, 16).padding(.vertical, 4)
+        .foregroundColor(Color(hex: "#F5F6F8"))
+    }
+}
 
 struct ErrorView: View {
     @ObservedObject var state: AppState

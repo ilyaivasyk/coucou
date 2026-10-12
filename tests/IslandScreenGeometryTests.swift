@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 @main
 enum IslandScreenGeometryTests {
@@ -48,6 +49,19 @@ enum IslandScreenGeometryTests {
             precondition(compact.miniGridCenterX == 200)
             precondition(compact.miniGridScale * 28 <= height - 4)
         }
-        print("Island screen geometry and resting layout: 13 cases passed")
+        let screen = CGRect(x: -1920, y: 200, width: 1920, height: 1080)
+        let panel = CGSize(width: 720, height: 560)
+        for offset: CGFloat in [0, 200, -200, -10000, 10000, .nan] {
+            let frame = IslandHorizontalPosition.frame(screen: screen, panelSize: panel,
+                                                      offset: offset, islandWidth: 640)
+            precondition(frame.maxY == screen.maxY && frame.size == panel)
+            precondition(frame.midX - 320 >= screen.minX && frame.midX + 320 <= screen.maxX)
+            if offset.isFinite && abs(offset) <= 200 { precondition(frame.midX == screen.midX + offset) }
+            if !offset.isFinite { precondition(frame.midX == screen.midX) }
+        }
+        let narrow = IslandHorizontalPosition.frame(screen: CGRect(x: 0, y: 0, width: 480, height: 800),
+            panelSize: panel, offset: 10000, islandWidth: 640)
+        precondition(narrow.midX == 240)
+        print("Island screen geometry, resting layout and horizontal positioning: 20 cases passed")
     }
 }

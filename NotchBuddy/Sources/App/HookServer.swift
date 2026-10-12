@@ -49,8 +49,10 @@ final class HookServer: @unchecked Sendable {
 
     /// True when a real nb-hook connection is holding the approval fd open.
     @MainActor var hasRealPendingApproval: Bool { !approvals.isEmpty }
-    /// True when a real nb-hook connection is holding the question fd open.
-    @MainActor var hasRealPendingQuestion: Bool { pendingQuestionFD >= 0 }
+    /// Protect live agent questions, including questions answered in Codex, from demo cleanup.
+    @MainActor var hasRealPendingQuestion: Bool {
+        pendingQuestionFD >= 0 || AppState.shared.pendingQuestion?.codexRequest != nil
+    }
     private var questionPillId: String = ""           // pill that owns the pending question
     private var questionSessionId: String = ""        // sessionId for the pending question (recap tracking)
     private var focusBeforeQuestion: String? = nil    // saved focus to restore after question
@@ -434,7 +436,7 @@ final class HookServer: @unchecked Sendable {
             bundleId.lowercased().contains("vscode"))
 
         // Routing:
-        // • "codex" → agent_codex (GitHub build only: workspace pill, approvals in the notch)
+        // • "codex" → agent_codex (GitHub build only: permissions stay in Codex)
         // • other valid coucou_agent → external pill (fire-and-forget, no approval card)
         // • Cursor bundle ID → agent_cursor
         // • VS Code → integration_claude
@@ -503,9 +505,14 @@ final class HookServer: @unchecked Sendable {
                 return
             }
         }
-        // A sibling session's event must not take the pill out of its approval state.
+        if let request = state.pendingQuestion?.codexRequest,
+           request.resolved(byEvent: name, payload: payload) {
+            dismissQuestionCard(note: "")
+        }
+        // A sibling session's event must not take a pending request out of its alert state.
         defer {
             if approvals.hasEntries(forPill: agentId) { state.updateTask(id: agentId, state: .approval) }
+            if state.pendingQuestion?.codexRequest != nil { state.updateTask(id: "agent_codex", state: .question) }
         }
 
         switch name {
@@ -548,6 +555,18 @@ final class HookServer: @unchecked Sendable {
             guard tool != "AskUserQuestion" else { break }
             upsertTask(pill: agentId, display: display, working: true,
                        externalAgent: isExternalAgent ? validAgent : nil)
+            if isCodexEvent, let question = AskQuestion.parseCodex(payload: payload), pendingQuestionFD < 0 {
+                state.pendingQuestion = question
+                questionPillId = agentId
+                questionSessionId = sessionId
+                state.isPinned = true
+                if focusBeforeQuestion == nil { focusBeforeQuestion = state.focusId }
+                state.focusId = agentId
+                state.updateTask(id: agentId, state: .question)
+                SoundEngine.shared.play("approval")
+                expandIfNeeded(to: .question)
+                break
+            }
             state.updateTask(id: agentId, state: .working)
             let input = payload["tool_input"] as? [String: Any] ?? [:]
             let step = localizedStep(tool: tool, input: input)
@@ -592,6 +611,7 @@ final class HookServer: @unchecked Sendable {
             // The step log is shared, so the conclusion is worth showing either way.
             if !finalText.isEmpty { appendStep(id: agentId, step: finalText) }
             RecapStore.shared.stop(sessionId: recapSessionId)
+            if state.pendingQuestion?.codexRequest?.sessionId == sessionId { break }
             // Another session is still mid-turn behind this pill: the finished state, the
             // sound and the idle reset below would land on its work. Its own Stop comes later.
             guard scope == .pill else {
@@ -756,6 +776,14 @@ final class HookServer: @unchecked Sendable {
         let projectName = aliasProjectName(rawName.isEmpty ? "Session" : rawName)
 
         let rawAgent = payload["coucou_agent"] as? String ?? ""
+        // PermissionRequest precedes Codex's reviewer; it cannot prove a person must decide.
+        if rawAgent == "codex" {
+            Task.detached { [weak self] in
+                self?.sendLine(fd: fd, text: #"{"permissionDecision":"ask"}"#)
+                close(fd)
+            }
+            return
+        }
         let termProgram = payload["term_program"] as? String ?? ""
         let bundleId    = payload["bundle_id"]    as? String ?? ""
         let isCursorEditor = bundleId.lowercased() == "com.todesktop.230313mzl4w4u92"
@@ -763,7 +791,7 @@ final class HookServer: @unchecked Sendable {
             termProgram.lowercased().contains("vscode") ||
             bundleId.lowercased().contains("vscode"))
 
-        // Codex, Copilot CLI and Muse Code get the same approval card as Claude Code / Cursor.
+        // Copilot CLI and Muse Code get the same approval card as Claude Code / Cursor.
         // Other external agents (any other coucou_agent) answer immediately with "ask"
         // so the agent re-asks in its own terminal — they do not get a notch card.
         #if !APPSTORE
@@ -1999,12 +2027,11 @@ final class HookServer: @unchecked Sendable {
         }
         let base = hookBase()
         // Events, timeouts in seconds (Codex format).
-        // PermissionRequest uses 120s + a statusMessage shown in the Codex UI while waiting.
+        // Codex owns command approvals, including Approve for me.
         let events: [(String, Int, String?)] = [
             ("SessionStart",    10,  nil),
             ("UserPromptSubmit", 10, nil),
             ("PreToolUse",      10,  nil),
-            ("PermissionRequest", 120, "Waiting for your answer in the notch (Coucou)"),
             ("PostToolUse",     10,  nil),
             ("Stop",            10,  nil),
             ("SubagentStart",   10,  nil),
@@ -2013,6 +2040,11 @@ final class HookServer: @unchecked Sendable {
             ("SessionEnd",       3,  nil),
         ]
         var hooks = root["hooks"] as? [String: Any] ?? [:]
+        if let groups = hooks["PermissionRequest"] as? [[String: Any]] {
+            let cleaned = removeNbHookEntries(from: groups)
+            if cleaned.isEmpty { hooks.removeValue(forKey: "PermissionRequest") }
+            else { hooks["PermissionRequest"] = cleaned }
+        }
         for (event, timeout, statusMsg) in events {
             if let raw = hooks[event], !(raw is [[String: Any]]) {
                 throw NSError(domain: "Coucou", code: 2, userInfo: [
@@ -3388,6 +3420,10 @@ def main():
     event = payload.get('hook_event_name', '')
     # socket_path is already defined above
 
+    # Codex's normal approval flow owns the decision, including automatic review.
+    if agent == 'codex' and event == 'PermissionRequest':
+        return
+
     if event == 'PermissionRequest':
         # Block and wait for Coucou's decision (Claude Code allows up to 120s)
         try:
@@ -3693,6 +3729,10 @@ def main():
 
     event = payload.get('hook_event_name', '')
     # socket_path is already defined above
+
+    # Codex's normal approval flow owns the decision, including automatic review.
+    if agent == 'codex' and event == 'PermissionRequest':
+        return
 
     if event == 'PermissionRequest':
         # Block and wait for Coucou's decision (Claude Code allows up to 120s)

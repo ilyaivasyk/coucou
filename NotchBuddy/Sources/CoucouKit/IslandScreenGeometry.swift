@@ -1,4 +1,15 @@
 import Foundation
+import CoreGraphics
+
+enum IslandHorizontalPosition {
+    static func frame(screen: CGRect, panelSize: CGSize, offset: CGFloat, islandWidth: CGFloat) -> CGRect {
+        let margin = min(islandWidth, screen.width) / 2
+        let proposed = screen.midX + (offset.isFinite ? offset : 0)
+        let center = max(screen.minX + margin, min(screen.maxX - margin, proposed))
+        return CGRect(x: center - panelSize.width / 2, y: screen.maxY - panelSize.height,
+                      width: panelSize.width, height: panelSize.height)
+    }
+}
 
 /// Resting island dimensions, using a physical notch only when the screen has one.
 struct IslandScreenGeometry {

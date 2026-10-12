@@ -556,6 +556,20 @@ struct IslandHeader: View {
                 }
                 #endif
                 HStack(spacing: 14) {
+                    Image(systemName: "arrow.left.and.right")
+                        .font(.system(size: 14)).foregroundColor(Color(hex: "#8E939C"))
+                        .frame(width: 24, height: 24)
+                        .overlay(IslandMoveHandle())
+                        .help(String(localized: "Move Coucou"))
+                        .accessibilityLabel(Text("Move Coucou"))
+                        .accessibilityAdjustableAction { direction in
+                            switch direction {
+                            case .increment: NotificationCenter.default.post(name: .islandMoveBy, object: CGFloat(20))
+                            case .decrement: NotificationCenter.default.post(name: .islandMoveBy, object: CGFloat(-20))
+                            @unknown default: return
+                            }
+                            NotificationCenter.default.post(name: .islandMoveEnded, object: nil)
+                        }
                     Button(action: {
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                             state.view = .settings

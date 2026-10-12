@@ -127,6 +127,33 @@ enum AskQuestionTests {
         checkTrue("tallest question wins, within cap",     tall > 160 && tall <= 560)
 
         // ── finish ─────────────────────────────────────────────────────────────
+        print("\nCodex input requests")
+        let codex: [String: Any] = ["session_id": "codex-1", "tool_use_id": "q1",
+            "tool_name": "request_user_input", "tool_input": single]
+        let cq = AskQuestion.parseCodex(payload: codex)
+        checkTrue("Codex choices are shown in its own UI", cq?.codexRequest != nil && cq?.questions == parsed?.questions)
+        var async = codex
+        async["tool_name"] = "request_user_input_async"
+        async["tool_input"] = ["questions": [["title": "What should I change?"],
+            ["title": "Which mode?", "options": ["Manual", "Timer"]]]]
+        let aq = AskQuestion.parseCodex(payload: async)
+        checkTrue("async free text and choices parse", aq?.questions.count == 2 && aq?.questions[0].options.isEmpty == true)
+        let answer: [String: Any] = ["session_id": "codex-1", "tool_use_id": "q1"]
+        checkTrue("sync answer closes its own card", cq?.codexRequest?.resolved(byEvent: "PostToolUse", payload: answer) == true)
+        checkTrue("async tool return keeps the question visible", aq?.codexRequest?.resolved(byEvent: "PostToolUse", payload: answer) == false)
+        checkTrue("async stop keeps the question visible", aq?.codexRequest?.resolved(byEvent: "Stop", payload: answer) == false)
+        checkTrue("user response clears async question", aq?.codexRequest?.resolved(byEvent: "UserPromptSubmit", payload: answer) == true)
+        checkTrue("another session cannot clear a question", aq?.codexRequest?.resolved(byEvent: "UserPromptSubmit", payload: ["session_id": "other"]) == false)
+        checkTrue("another tool cannot clear a sync question", cq?.codexRequest?.resolved(byEvent: "PostToolUse", payload: ["session_id": "codex-1", "tool_use_id": "q2"]) == false)
+        var invalid = codex
+        invalid["tool_name"] = "Bash"
+        checkTrue("commands never become question cards", AskQuestion.parseCodex(payload: invalid) == nil)
+        invalid = async
+        invalid["tool_input"] = ["questions": [["title": "Q", "options": ["Good", 42]]]]
+        checkTrue("malformed async options are rejected", AskQuestion.parseCodex(payload: invalid) == nil)
+        invalid = codex; invalid.removeValue(forKey: "tool_use_id")
+        checkTrue("missing request identity is rejected", AskQuestion.parseCodex(payload: invalid) == nil)
+
         if failures == 0 {
             print("\nAll tests passed.")
             exit(0)

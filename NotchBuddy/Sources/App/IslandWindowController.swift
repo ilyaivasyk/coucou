@@ -77,8 +77,8 @@ final class IslandWindowController: NSWindowController {
         let panelH: CGFloat = 560
         let sf = screen.frame
         let panel = IslandPanel(
-            contentRect: NSRect(x: sf.midX - panelW/2, y: sf.maxY - panelH,
-                                width: panelW, height: panelH),
+            contentRect: IslandHorizontalPosition.frame(screen: sf, panelSize: .init(width: panelW, height: panelH),
+                offset: UserDefaults.standard.double(forKey: "islandHorizontalOffset"), islandWidth: IslandConst.expandedWidth),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered, defer: false
         )
@@ -238,8 +238,9 @@ final class IslandWindowController: NSWindowController {
 
         let sf = screen.frame
         let size = panel.frame.size
-        panel.setFrame(NSRect(x: sf.midX - size.width/2, y: sf.maxY - size.height,
-                              width: size.width, height: size.height), display: true)
+        panel.setFrame(IslandHorizontalPosition.frame(screen: sf, panelSize: size,
+            offset: UserDefaults.standard.double(forKey: "islandHorizontalOffset"),
+            islandWidth: IslandConst.expandedWidth), display: true)
         // notchWidth/hasNotch are not @Published: tell the views to resize the island.
         NotificationCenter.default.post(name: .islandScreenChanged, object: nil)
         state.objectWillChange.send()
@@ -889,6 +890,21 @@ final class IslandWindowController: NSWindowController {
 
         NotificationCenter.default.addObserver(forName: .islandMinimize, object: nil, queue: .main) { [weak self] _ in
             self?.collapse(allowPendingApproval: true)
+        }
+
+        NotificationCenter.default.addObserver(forName: .islandMoveBy, object: nil, queue: .main) { [weak self] note in
+            MainActor.assumeIsolated {
+                guard let self, let panel = self.window, let delta = note.object as? CGFloat, delta.isFinite else { return }
+                let screen = Self.islandScreen().frame
+                panel.setFrame(IslandHorizontalPosition.frame(screen: screen, panelSize: panel.frame.size,
+                    offset: panel.frame.midX - screen.midX + delta, islandWidth: IslandConst.expandedWidth), display: true)
+            }
+        }
+        NotificationCenter.default.addObserver(forName: .islandMoveEnded, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let panel = self?.window else { return }
+                UserDefaults.standard.set(panel.frame.midX - Self.islandScreen().frame.midX, forKey: "islandHorizontalOffset")
+            }
         }
 
         // Wardrobe open/close from desktop Mochi right-click (does NOT post .hookExpand)
@@ -1999,6 +2015,8 @@ extension IslandWindowController {
 // MARK: - Notification names
 
 extension Notification.Name {
+    static let islandMoveBy = Notification.Name("notchBuddy.islandMoveBy")
+    static let islandMoveEnded = Notification.Name("notchBuddy.islandMoveEnded")
     static let triggerEmote     = Notification.Name("notchBuddy.triggerEmote")
     static let triggerSlap      = Notification.Name("notchBuddy.triggerSlap")
     static let botDizzy         = Notification.Name("notchBuddy.botDizzy")

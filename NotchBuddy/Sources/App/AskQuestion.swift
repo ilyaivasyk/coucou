@@ -26,6 +26,7 @@ extension AskQuestionItem {
 
 struct AskQuestion: Equatable {
     var questions: [AskQuestionItem]   // 1–4 questions
+    var codexRequest: CodexQuestionRequest? = nil
 
     /// Island height that fits the tallest question without truncation (rough estimate, text wraps at ~500 pt).
     var estimatedIslandHeight: CGFloat {
@@ -88,5 +89,54 @@ struct AskQuestion: Equatable {
             }
         }
         return answers
+    }
+}
+
+/// Codex asks and receives the answer in its own UI; Coucou only displays the request.
+struct CodexQuestionRequest: Equatable {
+    let sessionId: String
+    let toolUseId: String
+    let isAsync: Bool
+
+    func resolved(byEvent name: String, payload: [String: Any]) -> Bool {
+        guard payload["session_id"] as? String == sessionId else { return false }
+        if ["UserPromptSubmit", "Interrupt", "SessionEnd"].contains(name) { return true }
+        // shortcut: async hooks have no answer event; clear on the next user message or session end.
+        return !isAsync && ["PostToolUse", "PostToolUseFailure"].contains(name)
+            && payload["tool_use_id"] as? String == toolUseId
+    }
+}
+
+extension AskQuestion {
+    static func parseCodex(payload: [String: Any]) -> AskQuestion? {
+        guard let tool = payload["tool_name"] as? String,
+              ["request_user_input", "request_user_input_async"].contains(tool),
+              let session = payload["session_id"] as? String, !session.isEmpty,
+              let toolId = payload["tool_use_id"] as? String, !toolId.isEmpty,
+              let input = payload["tool_input"] as? [String: Any],
+              let rawQuestions = input["questions"] as? [[String: Any]], !rawQuestions.isEmpty else { return nil }
+        let isAsync = tool == "request_user_input_async"
+        var questions: [AskQuestionItem] = []
+        for raw in rawQuestions {
+            guard let text = raw[isAsync ? "title" : "question"] as? String,
+                  !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            let options: [AskQuestionOption]
+            if isAsync {
+                guard raw["options"] == nil || raw["options"] is [String] else { return nil }
+                options = (raw["options"] as? [String] ?? []).map { .init(label: $0, description: "") }
+            } else {
+                guard let rawOptions = raw["options"] as? [[String: Any]] else { return nil }
+                var parsed: [AskQuestionOption] = []
+                for option in rawOptions {
+                    guard let label = option["label"] as? String, !label.isEmpty else { return nil }
+                    parsed.append(.init(label: label, description: option["description"] as? String ?? ""))
+                }
+                options = parsed
+            }
+            guard options.allSatisfy({ !$0.label.isEmpty }) else { return nil }
+            questions.append(.init(question: text, header: raw["header"] as? String ?? "",
+                                   options: options, multiSelect: false))
+        }
+        return AskQuestion(questions: questions, codexRequest: .init(sessionId: session, toolUseId: toolId, isAsync: isAsync))
     }
 }
