@@ -455,7 +455,7 @@ struct CountdownBar: View {
     }
 
     private func updateBar() {
-        guard state.mode == .expanded && !state.isPinned else {
+        guard state.mode == .expanded && !state.isPinned && state.autoCloseInterval > 0 else {
             if barWidth != 0 { barWidth = 0 }
             return
         }
@@ -526,10 +526,6 @@ struct IslandHeader: View {
     @State private var soundHovered = false
     @State private var closeHovered = false
 
-    /// Pending approval or mail draft: the island refuses to fold (fsm.isHeldOpen), so the
-    /// close cross is not shown.
-    private var heldOpen: Bool { state.pendingApproval != nil || state.voiceMailDraft != nil }
-
     var body: some View {
         HStack(spacing: 0) {
             // Left: tab capsules
@@ -580,17 +576,20 @@ struct IslandHeader: View {
                     .buttonStyle(.plain)
                     .onHover { soundHovered = $0 }
 
-                    // Fold back to the compact island now, without waiting for the timer.
-                    if !heldOpen {
+                    // Keep an unsent email open; agent requests can remain pending while compact.
+                    if state.voiceMailDraft == nil {
                         Button(action: {
-                            NotificationCenter.default.post(name: .islandCollapse, object: nil)
+                            NotificationCenter.default.post(name: .islandMinimize, object: nil)
                         }) {
-                            Image(systemName: "xmark")
+                            Image(systemName: "chevron.up")
                                 .font(.system(size: 14))
                                 .foregroundColor(closeHovered ? Color(hex: "#F5F6F8") : Color(hex: "#8E939C"))
+                                .frame(width: 24, height: 24)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .help(String(localized: "Close"))
+                        .help(String(localized: "Minimize"))
+                        .accessibilityLabel(Text("Minimize"))
                         .onHover { closeHovered = $0 }
                     }
                 }

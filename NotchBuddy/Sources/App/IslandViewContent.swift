@@ -5004,13 +5004,15 @@ struct SettingsIslandView: View {
                         .font(.system(size: 12))
                         .foregroundColor(Color(hex: "#8E939C"))
                         .frame(width: 16)
-                    Text(String(format: String(localized: "Auto-close · %llds"), Int64(state.autoCloseInterval)))
+                    Text(state.autoCloseInterval > 0
+                         ? String(format: String(localized: "Auto-close · %llds"), Int64(state.autoCloseInterval))
+                         : String(localized: "Manual"))
                         .font(.system(size: 12))
                         .foregroundColor(Color(hex: "#C5C8CD"))
                     Spacer()
                     HStack(spacing: 6) {
-                        ForEach([10, 15, 30], id: \.self) { s in
-                            Button("\(s)s") {
+                        ForEach([0, 10, 15, 30], id: \.self) { s in
+                            Button(s == 0 ? String(localized: "Manual") : "\(s)s") {
                                 state.autoCloseInterval = Double(s)
                             }
                             .font(.system(size: 11))

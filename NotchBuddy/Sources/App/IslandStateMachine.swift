@@ -215,13 +215,15 @@ final class IslandStateMachine {
 
     private func scheduleHomeCollapse() {
         homeCollapseWork?.cancel()
+        homeCollapseWork = nil
+        guard homeToPetitDelay > 0 else { return } // Zero selects manual collapse.
+        let delay = openedByHover ? hoverCloseDelay : homeToPetitDelay
         let item = DispatchWorkItem { [weak self] in
             guard let self, self.state == .home, !(self.isHeldOpen?() ?? false) else { return }
             self.openedByHover = false
             self.transition(to: .petit)
         }
         homeCollapseWork = item
-        let delay = openedByHover ? hoverCloseDelay : homeToPetitDelay
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
     }
 

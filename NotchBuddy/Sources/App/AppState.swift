@@ -301,7 +301,7 @@ final class AppState: ObservableObject {
     @Published var openOnHover: Bool = false {
         didSet { UserDefaults.standard.set(openOnHover, forKey: "openOnHover") }
     }
-    @Published var autoCloseInterval: TimeInterval = 15 {
+    @Published var autoCloseInterval: TimeInterval = 0 {
         didSet { UserDefaults.standard.set(autoCloseInterval, forKey: "autoCloseInterval") }
     }
 

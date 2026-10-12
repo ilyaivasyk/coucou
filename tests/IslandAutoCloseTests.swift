@@ -4,6 +4,42 @@ import Foundation
 enum IslandAutoCloseTests {
     @MainActor
     static func main() async throws {
+        // Manual mode stays expanded until the user folds it, then reopens normally.
+        let manual = openedMachine(delay: 0)
+        manual.mouseLeft()
+        try await Task.sleep(for: .milliseconds(100))
+        precondition(manual.state == .home)
+        manual.collapse()
+        precondition(manual.state == .petit)
+        manual.click()
+        precondition(manual.state == .home)
+
+        // Manual mode also overrides the short hover countdown.
+        let manualHover = IslandStateMachine()
+        manualHover.homeToPetitDelay = 0
+        manualHover.openOnHover = true
+        manualHover.hoverCloseDelay = 0.01
+        manualHover.mouseEntered()
+        manualHover.mouseLeft()
+        try await Task.sleep(for: .milliseconds(100))
+        precondition(manualHover.state == .home)
+
+        // Folding a waiting request keeps its compact indicator visible.
+        let waiting = openedMachine(delay: 0)
+        waiting.isHeldOpen = { true }
+        waiting.petitToHiddenDelay = 0.01
+        waiting.collapse()
+        waiting.mouseLeft()
+        try await Task.sleep(for: .milliseconds(100))
+        precondition(waiting.state == .petit)
+
+        // Choosing manual mode cancels an already running countdown.
+        let disabled = openedMachine(delay: 0.05)
+        disabled.mouseLeft()
+        disabled.homeToPetitDelay = 0
+        try await Task.sleep(for: .milliseconds(100))
+        precondition(disabled.state == .home)
+
         // A configured 2-second delay replaces the default 15 seconds.
         let configured = openedMachine(delay: 2)
         let start = DispatchTime.now().uptimeNanoseconds
@@ -82,7 +118,7 @@ enum IslandAutoCloseTests {
         heldCountdown.mouseLeft()
         try await waitForCompact(heldCountdown, )
 
-        print("Island auto-close: 8 cases passed")
+        print("Island auto-close: 12 cases passed")
     }
 
     @MainActor

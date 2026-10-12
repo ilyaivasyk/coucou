@@ -338,6 +338,9 @@ struct SettingsView: View {
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 64)
                     Text("s inactive")
+                    Text("0 = manual")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
                 }
                 HStack(spacing: 8) {
                     Text("Hide after")

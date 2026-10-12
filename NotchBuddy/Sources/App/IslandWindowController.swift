@@ -324,8 +324,8 @@ final class IslandWindowController: NSWindowController {
             self?.fsm.greetComplete()
         }
 
-        // An approval, or an email prepared by voice, stays open until I click.
-        fsm.isHeldOpen = { AppState.shared.pendingApproval != nil || AppState.shared.voiceMailDraft != nil }
+        // Keep pending requests visible and unsent voice email drafts open.
+        fsm.isHeldOpen = { AppState.shared.pendingApproval != nil || AppState.shared.pendingQuestion != nil || AppState.shared.voiceMailDraft != nil }
 
         // Voice: wake phrase detected → open listening island
         #if !APPSTORE
@@ -610,9 +610,9 @@ final class IslandWindowController: NSWindowController {
     }
 
     func collapse(allowPendingApproval: Bool = false) {
-        let keepsApprovalPending = allowPendingApproval && state.pendingApproval != nil
-        guard fsm.isHeldOpen?() != true || keepsApprovalPending else { return }
-        if !keepsApprovalPending { state.isPinned = false }
+        let keepsRequestPending = allowPendingApproval && (state.pendingApproval != nil || state.pendingQuestion != nil)
+        guard fsm.isHeldOpen?() != true || keepsRequestPending else { return }
+        if !keepsRequestPending { state.isPinned = false }
         finishedPinTimer?.cancel()
         #if !APPSTORE
         VoiceSpeaker.shared.stop()
@@ -885,6 +885,10 @@ final class IslandWindowController: NSWindowController {
         // Collapse requests from views (OK button, etc.)
         NotificationCenter.default.addObserver(forName: .islandCollapse, object: nil, queue: .main) { [weak self] _ in
             self?.collapse()
+        }
+
+        NotificationCenter.default.addObserver(forName: .islandMinimize, object: nil, queue: .main) { [weak self] _ in
+            self?.collapse(allowPendingApproval: true)
         }
 
         // Wardrobe open/close from desktop Mochi right-click (does NOT post .hookExpand)
@@ -1254,6 +1258,7 @@ final class IslandWindowController: NSWindowController {
 
     func defaultView() -> IslandView {
         if state.pendingApproval != nil { return .approval }
+        if state.pendingQuestion != nil { return .question }
         return state.tasks.isEmpty ? .empty : .overview
     }
 
@@ -2004,6 +2009,7 @@ extension Notification.Name {
     static let botMorphTo       = Notification.Name("notchBuddy.botMorphTo")
     static let islandAction     = Notification.Name("notchBuddy.islandAction")
     static let islandCollapse      = Notification.Name("notchBuddy.islandCollapse")
+    static let islandMinimize      = Notification.Name("notchBuddy.islandMinimize")
     static let voiceShowMailCard   = Notification.Name("notchBuddy.voiceShowMailCard")
     static let islandSendMessage   = Notification.Name("notchBuddy.islandSendMessage")
     static let islandNewConversation = Notification.Name("notchBuddy.islandNewConversation")
