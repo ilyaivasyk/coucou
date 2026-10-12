@@ -256,10 +256,7 @@ struct OverviewView: View {
             #endif
         case "agent_codex":
             #if !APPSTORE
-            if let url = NSWorkspace.shared.urlForApplication(
-                withBundleIdentifier: "com.openai.codex") {
-                NSWorkspace.shared.openApplication(at: url, configuration: .init(), completionHandler: nil)
-            }
+            openCodexApp()
             #endif
         case "agent_claude-desktop":
             openClaudeDesktopApp()
@@ -636,9 +633,7 @@ private struct CodexQuestionNotice: View {
                 }
             }
             PrimaryButton("Open Codex") {
-                if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.openai.codex") {
-                    NSWorkspace.shared.openApplication(at: url, configuration: .init(), completionHandler: nil)
-                }
+                openCodexApp()
             }
         }
         .padding(.leading, 116).padding(.trailing, 16).padding(.vertical, 4)
@@ -681,16 +676,29 @@ private func openClaudeDesktopApp() {
     }
 }
 
+private func openCodexApp() {
+    if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.openai.codex") {
+        NSWorkspace.shared.openApplication(at: url, configuration: .init(), completionHandler: nil)
+    }
+}
+
 // MARK: - Finished
 
 struct FinishedView: View {
     @ObservedObject var state: AppState
 
+    private var agentName: String {
+        guard let definition = PillCatalog.definition(for: state.focusTask?.id ?? "") else {
+            return state.focusTask?.name ?? "Agent"
+        }
+        return definition.sessionSubtitle == "Agent" ? definition.name : definition.sessionSubtitle
+    }
+
     var body: some View {
         ZStack {
             CardBackground(wash: .green)
             VStack(alignment: .leading, spacing: 5) {
-                AgentWho(task: state.focusTask, label: "Claude Code finished")
+                AgentWho(task: state.focusTask, label: "\(agentName) finished")
                 Text({
                     if let fl = state.focusTask?.finalLine { return fl }
                     if let s = state.focusTask?.steps.last(where: { !$0.isDiffStep }) { return s }
@@ -704,6 +712,11 @@ struct FinishedView: View {
                         // Sessions from the Claude desktop app live there, not in a terminal.
                         PrimaryButton("Open Claude") {
                             openClaudeDesktopApp()
+                            NotificationCenter.default.post(name: .islandCollapse, object: nil)
+                        }
+                    } else if state.focusTask?.id == "agent_codex" {
+                        PrimaryButton("Open Codex") {
+                            openCodexApp()
                             NotificationCenter.default.post(name: .islandCollapse, object: nil)
                         }
                     } else {
@@ -4771,7 +4784,7 @@ extension CardBackground where Content == EmptyView {
 
 struct AgentWho: View {
     let task: AgentTask?
-    let label: String
+    let label: LocalizedStringKey
 
     var body: some View {
         HStack(spacing: 7) {
@@ -4779,7 +4792,7 @@ struct AgentWho: View {
                 Circle().fill(Color(hex: task.color)).frame(width: 8, height: 8)
                 Text(task.name).font(.system(size: 12, weight: .semibold)).foregroundColor(Color(hex: "#F5F6F8"))
             }
-            Text(LocalizedStringKey(label)).font(.system(size: 12)).foregroundColor(Color(hex: "#8E939C"))
+            Text(label).font(.system(size: 12)).foregroundColor(Color(hex: "#8E939C"))
         }
     }
 }
